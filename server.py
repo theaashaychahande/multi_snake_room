@@ -47,7 +47,7 @@ def handle_client(conn, addr, player_id):
             data = conn.recv(1024)
             if not data:
                 break
-            # Receive direction from client
+           
             direction = pickle.loads(data)
             with lock:
                 if player_id in snakes:
@@ -59,4 +59,61 @@ def handle_client(conn, addr, player_id):
             if player_id in snakes:
                 del snakes[player_id]
         conn.close()
+
+def game_loop():
+    global snakes, foods
+    while True:
+        time.sleep(1 / TICK_RATE)
+        with lock:
+          
+            for pid, snake in snakes.items():
+                if not snake['alive']:
+                    continue
+                dx, dy = snake['dir']
+                head_x, head_y = snake['body'][0]
+                new_head = (head_x + dx, head_y + dy)
+              
+                new_head = (new_head[0] % WIDTH, new_head[1] % HEIGHT)
+                snake['body'].insert(0, new_head)
+              
+                ate = False
+                for f in foods:
+                    if (abs(new_head[0] - f[0]) < 10) and (abs(new_head[1] - f[1]) < 10):
+                        foods.remove(f)
+                        ate = True
+                        break
+                if not ate:
+                    snake['body'].pop()  
+              
+                if new_head in snake['body'][1:]:
+                    snake['alive'] = False
+            spawn_food()
+          
+            state = {'snakes': snakes, 'foods': foods}
+            for conn in connections:
+                try:
+                    conn.sendall(pickle.dumps(state))
+                except:
+                    pass
+
+connections = []
+
+def accept_clients(server):
+    player_id = 0
+    while True:
+        conn, addr = server.accept()
+        connections.append(conn)
+        threading.Thread(target=handle_client, args=(conn, addr, player_id), daemon=True).start()
+        player_id += 1
+
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind((SERVER_IP, SERVER_PORT))
+    server.listen()
+    print(f"[SERVER STARTED] {SERVER_IP}:{SERVER_PORT}")
+    threading.Thread(target=game_loop, daemon=True).start()
+    accept_clients(server)
+
+if __name__ == "__main__":
+    main() 
 
